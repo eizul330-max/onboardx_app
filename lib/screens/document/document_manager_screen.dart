@@ -1,3 +1,4 @@
+// document_manager_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -28,8 +29,7 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
   @override
   void initState() {
     super.initState();
-    _documentService =
-        DocumentService(baseUrl: 'http://10.111.132.36:4000/api');
+    _documentService = DocumentService(baseUrl: 'http://10.111.132.36:4000/api');
     _initializeUser();
   }
 
@@ -44,13 +44,16 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
+  /// 🔹 Load all documents/folders for the current parent folder.
   Future<void> _loadDocuments() async {
     if (_uid == null) return;
     try {
+      print('📂 Loading documents for parentId=$_currentFolderId');
       final docs = await _documentService.fetchFolderContents(
         _uid!,
         parentId: _currentFolderId,
       );
+      print('✅ Loaded ${docs.length} items');
       setState(() {
         _documents = docs;
         _loading = false;
@@ -61,6 +64,7 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
+  /// 🔹 Create a new folder under current folder
   Future<void> _createFolder() async {
     if (_uid == null) return;
     final controller = TextEditingController();
@@ -75,12 +79,13 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
           TextButton(
-              onPressed: () =>
-                  Navigator.pop(context, controller.text.trim()),
-              child: const Text('Create')),
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Create'),
+          ),
         ],
       ),
     );
@@ -100,33 +105,48 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
+  /// 🔹 Enter a selected folder
   Future<void> _enterFolder(Map<String, dynamic> folder) async {
+    print('📁 Entering folder: ${folder['name']} (id=${folder['_id']})');
+
     _folderStack.add({
       'id': _currentFolderId,
       'name': _currentFolderName,
     });
+
     setState(() {
       _currentFolderId = folder['_id'];
       _currentFolderName = folder['name'] ?? 'Unnamed Folder';
       _loading = true;
     });
+
     await _loadDocuments();
+
+    // ✅ Ensure rebuild even if setState above didn’t refresh properly
+    setState(() {});
   }
 
+  /// 🔹 Go back to the previous folder
   Future<void> _goBack() async {
     if (_folderStack.isEmpty) return;
     final prev = _folderStack.removeLast();
+
+    print('⬅️ Going back to folder: ${prev['name']} (id=${prev['id']})');
+
     setState(() {
       _currentFolderId = prev['id'];
       _currentFolderName = prev['name'] ?? 'My Documents';
       _loading = true;
     });
+
     await _loadDocuments();
   }
 
+  /// 🔹 Upload a file
   Future<void> _uploadDocument() async {
     if (_uid == null) return;
     final result = await FilePicker.platform.pickFiles();
+
     if (result != null && result.files.single.path != null) {
       final file = File(result.files.single.path!);
       try {
@@ -146,19 +166,51 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
+  /// 🔹 Delete a file or folder (with confirmation dialog)
   Future<void> _deleteDocument(String id) async {
     if (_uid == null) return;
+
+    // Find item name/type for dialog
+    final item = _documents.firstWhere((doc) => doc['_id'] == id, orElse: () => {});
+    final itemName = item['name'] ?? 'this item';
+    final isFile = item['type'] == 'file';
+    final itemType = isFile ? 'file' : 'folder';
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete $itemType?'),
+        content: Text(
+          'Are you sure you want to delete "$itemName"? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return; // User cancelled
+
     try {
       await _documentService.deleteDocument(id, _uid!);
       setState(() {
         _documents.removeWhere((doc) => doc['_id'] == id);
       });
-      _showMessage('File deleted successfully');
+      _showMessage('${isFile ? "File" : "Folder"} deleted successfully');
     } catch (e) {
       _showError('Delete failed: $e');
     }
   }
 
+  /// 🔹 Download file
   Future<void> _downloadDocument(String id, String name) async {
     if (_uid == null) return;
     try {
@@ -172,6 +224,7 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
+  // 🔹 UI Helpers
   void _showError(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -195,6 +248,7 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     return '${mb.toStringAsFixed(2)} MB';
   }
 
+  // 🔹 UI Rendering
   @override
   Widget build(BuildContext context) {
     final isEmpty = !_loading && _documents.isEmpty;
