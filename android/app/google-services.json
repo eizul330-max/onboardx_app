@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "407157077877",
+    "project_id": "onboardx-73b02",
+    "storage_bucket": "onboardx-73b02.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:407157077877:android:cfade3e026a3a79f57c53c",
+        "android_client_info": {
+          "package_name": "com.example.onboardx_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8SB_35XKiL1geubV_rLQv6jxFoY0r-o0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:407157077877:android:503d5f71da5b29ce57c53c",
+        "android_client_info": {
+          "package_name": "com.example.onboardx_tnb"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC8SB_35XKiL1geubV_rLQv6jxFoY0r-o0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

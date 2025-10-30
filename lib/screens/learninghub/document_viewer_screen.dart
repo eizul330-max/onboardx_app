@@ -1,0 +1,131 @@
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+class DocumentViewerScreen extends StatefulWidget {
+  final String documentUrl;
+  final String documentTitle;
+  final String contentType;
+
+  const DocumentViewerScreen({
+    super.key,
+    required this.documentUrl,
+    required this.documentTitle,
+    required this.contentType,
+  });
+
+  @override
+  State<DocumentViewerScreen> createState() => _DocumentViewerScreenState();
+}
+
+class _DocumentViewerScreenState extends State<DocumentViewerScreen> {
+  late final WebViewController _webViewController;
+  bool _isLoading = true;
+  double _progress = 0;
+
+  @override
+void initState() {
+  super.initState();
+
+  _webViewController = WebViewController()
+    ..setJavaScriptMode(JavaScriptMode.unrestricted)
+    ..setNavigationDelegate(
+      NavigationDelegate(
+        onProgress: (int progress) {
+          setState(() {
+            _progress = progress / 100;
+            _isLoading = progress < 100;
+          });
+          print('WebView loading: $progress%');
+        },
+        onPageStarted: (String url) {
+          setState(() {
+            _isLoading = true;
+          });
+        },
+        onPageFinished: (String url) {
+          setState(() {
+            _isLoading = false;
+          });
+          print('Page finished loading: $url');
+        },
+        onWebResourceError: (WebResourceError error) async {
+          setState(() {
+            _isLoading = false;
+          });
+          print('WebView error: ${error.errorCode} - ${error.description}');
+
+          // If WebView can't render (commonly for PDF on Android), try opening externally
+          final uri = Uri.tryParse(widget.documentUrl);
+          if (uri != null) {
+            try {
+              // Use url_launcher to open externally
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            } catch (e) {
+              print('Failed to launch externally: $e');
+            }
+          }
+        },
+        onUrlChange: (UrlChange change) {
+          print('URL changed to: ${change.url}');
+        },
+      ),
+    )
+    ..loadRequest(Uri.parse(widget.documentUrl));
+}
+
+
+  @override
+  Widget build(BuildContext context) {
+    
+    final Color textColor = Theme.of(context).colorScheme.onBackground;
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.documentTitle,
+          style: TextStyle(color: textColor),
+        ),
+        centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: textColor,
+        automaticallyImplyLeading: false,
+        leading: Center(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFF107966),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.arrow_back_ios_new,
+                color: Colors.white,
+                size: 16,
+              ),
+            ),
+          ),
+        ),
+      ),
+      body: Stack(
+        children: [
+          WebViewWidget(controller: _webViewController),
+          if (_isLoading)
+            LinearProgressIndicator(
+              value: _progress,
+              backgroundColor: Colors.grey[300],
+              valueColor: const AlwaysStoppedAnimation<Color>(
+                Color(0xFF107966),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

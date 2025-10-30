@@ -1,0 +1,16 @@
+flutter_native_splash:
+  android: true
+  ios: true
+  web: false
+
+  # background_image: assets/images/background_splash.png
+  color: "#D9D9D9"
+  # image: assets/icons/app_x.png
+  branding: assets/images/logo_tnb.png
+
+  
+  android_12:
+    # background_image: assets/images/background_splash.png
+    color: "#D9D9D9"
+    image: assets/icons/app_x.png
+    branding: assets/images/logo_tnb.png
