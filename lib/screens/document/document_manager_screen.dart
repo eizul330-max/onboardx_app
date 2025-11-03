@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:onboardx_app/services/document_services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:onboardx_app/services/document_services.dart';
 import 'document_preview_screen.dart';
 
 class DocumentManagerScreen extends StatefulWidget {
@@ -15,13 +15,11 @@ class DocumentManagerScreen extends StatefulWidget {
 }
 
 class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
-  late final DocumentService _documentService;
+  final DocumentService _documentService = DocumentService();
   List<dynamic> _documents = [];
   bool _loading = true;
   bool _uploading = false;
   String? _uid;
-
-  // Folder navigation
   String? _currentFolderId;
   String _currentFolderName = 'My Documents';
   final List<Map<String, String?>> _folderStack = [];
@@ -29,7 +27,6 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
   @override
   void initState() {
     super.initState();
-    _documentService = DocumentService(baseUrl: 'http://10.111.132.36:4000/api');
     _initializeUser();
   }
 
@@ -44,16 +41,14 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
-  /// 🔹 Load all documents/folders for the current parent folder.
   Future<void> _loadDocuments() async {
     if (_uid == null) return;
     try {
-      print('📂 Loading documents for parentId=$_currentFolderId');
+      setState(() => _loading = true);
       final docs = await _documentService.fetchFolderContents(
         _uid!,
         parentId: _currentFolderId,
       );
-      print('✅ Loaded ${docs.length} items');
       setState(() {
         _documents = docs;
         _loading = false;
@@ -64,7 +59,6 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
-  /// 🔹 Create a new folder under current folder
   Future<void> _createFolder() async {
     if (_uid == null) return;
     final controller = TextEditingController();
@@ -105,44 +99,25 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
-  /// 🔹 Enter a selected folder
   Future<void> _enterFolder(Map<String, dynamic> folder) async {
-    print('📁 Entering folder: ${folder['name']} (id=${folder['_id']})');
-
-    _folderStack.add({
-      'id': _currentFolderId,
-      'name': _currentFolderName,
-    });
-
+    _folderStack.add({'id': _currentFolderId, 'name': _currentFolderName});
     setState(() {
       _currentFolderId = folder['_id'];
       _currentFolderName = folder['name'] ?? 'Unnamed Folder';
-      _loading = true;
     });
-
     await _loadDocuments();
-
-    // ✅ Ensure rebuild even if setState above didn’t refresh properly
-    setState(() {});
   }
 
-  /// 🔹 Go back to the previous folder
   Future<void> _goBack() async {
     if (_folderStack.isEmpty) return;
     final prev = _folderStack.removeLast();
-
-    print('⬅️ Going back to folder: ${prev['name']} (id=${prev['id']})');
-
     setState(() {
       _currentFolderId = prev['id'];
       _currentFolderName = prev['name'] ?? 'My Documents';
-      _loading = true;
     });
-
     await _loadDocuments();
   }
 
-  /// 🔹 Upload a file
   Future<void> _uploadDocument() async {
     if (_uid == null) return;
     final result = await FilePicker.platform.pickFiles();
@@ -166,51 +141,42 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
-  /// 🔹 Delete a file or folder (with confirmation dialog)
-  Future<void> _deleteDocument(String id) async {
+  Future<void> _deleteItem(String id, String type) async {
     if (_uid == null) return;
-
-    // Find item name/type for dialog
-    final item = _documents.firstWhere((doc) => doc['_id'] == id, orElse: () => {});
-    final itemName = item['name'] ?? 'this item';
-    final isFile = item['type'] == 'file';
-    final itemType = isFile ? 'file' : 'folder';
-
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Delete $itemType?'),
-        content: Text(
-          'Are you sure you want to delete "$itemName"? This action cannot be undone.',
-        ),
+        title: const Text('Delete Item?'),
+        content: const Text('This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-
-    if (confirm != true) return; // User cancelled
+    if (confirm != true) return;
 
     try {
-      await _documentService.deleteDocument(id, _uid!);
-      setState(() {
-        _documents.removeWhere((doc) => doc['_id'] == id);
-      });
-      _showMessage('${isFile ? "File" : "Folder"} deleted successfully');
+      // ✅ Fixed call — matches DocumentService.deleteItem() parameters
+      await _documentService.deleteItem(
+        id,
+        _uid!,
+        type,
+        parentId: _currentFolderId,
+      );
+      await _loadDocuments();
+      _showMessage('Deleted successfully');
     } catch (e) {
       _showError('Delete failed: $e');
     }
   }
 
-  /// 🔹 Download file
   Future<void> _downloadDocument(String id, String name) async {
     if (_uid == null) return;
     try {
@@ -224,20 +190,14 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     }
   }
 
-  // 🔹 UI Helpers
-  void _showError(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.red),
-    );
-  }
+  // Helpers
+  void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.red.shade600),
+      );
 
-  void _showMessage(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.green),
-    );
-  }
+  void _showMessage(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg), backgroundColor: Colors.green.shade600),
+      );
 
   String _formatFileSize(int? bytes) {
     if (bytes == null || bytes == 0) return '0 KB';
@@ -248,11 +208,8 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     return '${mb.toStringAsFixed(2)} MB';
   }
 
-  // 🔹 UI Rendering
   @override
   Widget build(BuildContext context) {
-    final isEmpty = !_loading && _documents.isEmpty;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(_currentFolderName),
@@ -275,12 +232,12 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : isEmpty
+          : _documents.isEmpty
               ? const Center(
                   child: Text(
-                    'No items found.\nCreate a folder or upload a file to start!',
+                    'No items found.\nCreate a folder or upload a file!',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                    style: TextStyle(color: Colors.grey),
                   ),
                 )
               : RefreshIndicator(
@@ -290,16 +247,17 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
                     itemBuilder: (context, index) {
                       final doc = _documents[index];
                       final name = doc['name'] ?? 'Unnamed';
-                      final size = _formatFileSize(doc['file_size']);
                       final isFile = doc['type'] == 'file';
 
                       return ListTile(
                         leading: Icon(
                           isFile ? Icons.insert_drive_file : Icons.folder,
-                          color: isFile ? Colors.blueAccent : Colors.amber,
+                          color: isFile ? Colors.blue : Colors.amber,
                         ),
                         title: Text(name),
-                        subtitle: isFile ? Text('Size: $size') : null,
+                        subtitle: isFile
+                            ? Text(_formatFileSize(doc['file_size']))
+                            : null,
                         onTap: () {
                           if (isFile) {
                             Navigator.push(
@@ -327,7 +285,8 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
                               ),
                             IconButton(
                               icon: const Icon(Icons.delete),
-                              onPressed: () => _deleteDocument(doc['_id']),
+                              onPressed: () =>
+                                  _deleteItem(doc['_id'], doc['type']),
                             ),
                           ],
                         ),

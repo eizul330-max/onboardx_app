@@ -51,7 +51,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _evaluateBiometricAvailability() async {
     try {
-      final localAuthProv = Provider.of<LocalAuthenticationProvider>(context, listen: false);
+      final localAuthProv =
+          Provider.of<LocalAuthenticationProvider>(context, listen: false);
       final prefs = await SharedPreferences.getInstance();
       final canCheck = await localAuthProv.checkBiometricAvailability();
       final bioEnabled = prefs.getBool(_kBiometricEnabledKey) ?? false;
@@ -59,12 +60,18 @@ class _LoginScreenState extends State<LoginScreen> {
       // Also check available biometrics and saved credentials
       final available = await localAuthProv.getAvailableBiometrics();
       final savedEmail = await _secureStorage.read(key: _kSavedEmailKey) ?? '';
-      final savedPassword = await _secureStorage.read(key: _kSavedPasswordKey) ?? '';
+      final savedPassword =
+          await _secureStorage.read(key: _kSavedPasswordKey) ?? '';
 
-      debugPrint('evaluateBiometricAvailability -> canCheck: $canCheck, bioEnabled: $bioEnabled, available: $available, savedEmail: ${savedEmail.isNotEmpty}');
+      debugPrint(
+          'evaluateBiometricAvailability -> canCheck: $canCheck, bioEnabled: $bioEnabled, available: $available, savedEmail: ${savedEmail.isNotEmpty}');
 
       setState(() {
-        _showBiometricButton = canCheck && bioEnabled && available.isNotEmpty && savedEmail.isNotEmpty && savedPassword.isNotEmpty;
+        _showBiometricButton = canCheck &&
+            bioEnabled &&
+            available.isNotEmpty &&
+            savedEmail.isNotEmpty &&
+            savedPassword.isNotEmpty;
       });
     } catch (e) {
       // if something fails, just hide biometric button
@@ -76,7 +83,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _tryAutoBiometricLogin() async {
-    final localAuthProv = Provider.of<LocalAuthenticationProvider>(context, listen: false);
+    final localAuthProv =
+        Provider.of<LocalAuthenticationProvider>(context, listen: false);
     final prefs = await SharedPreferences.getInstance();
 
     final bool bioEnabled = prefs.getBool(_kBiometricEnabledKey) ?? false;
@@ -112,7 +120,8 @@ class _LoginScreenState extends State<LoginScreen> {
           _isLoading = true;
         });
         try {
-          User? user = await _authService.signInWithEmail(savedEmail, savedPassword);
+          User? user =
+              await _authService.signInWithEmail(savedEmail, savedPassword);
           if (user != null) {
             if (user.emailVerified) {
               // set loginStatus only after successful login
@@ -155,7 +164,10 @@ class _LoginScreenState extends State<LoginScreen> {
         // show message why failed
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Auto biometric auth failed: ${result['message']}'), backgroundColor: Colors.red),
+            SnackBar(
+                content:
+                    Text('Auto biometric auth failed: ${result['message']}'),
+                backgroundColor: Colors.red),
           );
         }
       }
@@ -165,71 +177,51 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _login() async {
-    // Validate form
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // Call AuthService to login with email and password
       User? user = await _authService.signInWithEmail(
         _emailController.text.trim(),
         _passwordController.text,
       );
 
-      if (user != null) {
-        // Check if email is verified
-        if (user.emailVerified) {
-          // selepas berjaya login, tanya user nak enable biometric?
-          await _offerEnableBiometricIfAvailable(_emailController.text.trim(), _passwordController.text);
-
-          // set loginStatus only after successful login
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool(_kLoginStatusKey, true);
-
-          // Login successful and email verified - navigate to home screen
-          if (mounted) {
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-            );
-          }
-        } else {
-          // Email not verified - show verification dialog
-          _showVerificationDialog(context, user);
-        }
-      } else {
-        // Login failed
+      if (user == null) {
+        // AuthService returned null on failure
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Login failed. Please check your credentials.'),
             backgroundColor: Colors.red,
           ),
         );
-      }
-    } on FirebaseAuthException catch (e) {
-      String errorMessage = 'Login failed. Please try again.';
-
-      if (e.code == 'user-not-found') {
-        errorMessage = 'No user found with this email.';
-      } else if (e.code == 'wrong-password') {
-        errorMessage = 'Incorrect password.';
-      } else if (e.code == 'invalid-email') {
-        errorMessage = 'Invalid email address.';
-      } else if (e.code == 'user-disabled') {
-        errorMessage = 'This account has been disabled.';
+        return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(errorMessage),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // Optionally refresh user (good if you rely on latest claims)
+      await user.reload();
+      final currentUser = FirebaseAuth.instance.currentUser;
+
+      if (currentUser != null && currentUser.emailVerified) {
+        await _offerEnableBiometricIfAvailable(
+            _emailController.text.trim(), _passwordController.text);
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool(_kLoginStatusKey, true);
+
+        if (mounted) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const HomeScreen()),
+          );
+        }
+      } else {
+        // show verification dialog using the signed-in user object (currentUser may be null if something's off)
+        _showVerificationDialog(context, currentUser ?? user);
+      }
     } catch (e) {
+      // Fallback generic error
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error: ${e.toString()}'),
@@ -237,23 +229,27 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
-      // re-evaluate biometric button (in case user just enabled biometric)
-      await _evaluateBiometricAvailability();
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        await _evaluateBiometricAvailability();
+      }
     }
   }
 
-  Future<void> _offerEnableBiometricIfAvailable(String email, String password) async {
-    final localAuthProv = Provider.of<LocalAuthenticationProvider>(context, listen: false);
+  Future<void> _offerEnableBiometricIfAvailable(
+      String email, String password) async {
+    final localAuthProv =
+        Provider.of<LocalAuthenticationProvider>(context, listen: false);
     final prefs = await SharedPreferences.getInstance();
 
     final bool canCheck = await localAuthProv.checkBiometricAvailability();
     final bool alreadyEnabled = prefs.getBool(_kBiometricEnabledKey) ?? false;
 
     if (!canCheck || alreadyEnabled) {
-      debugPrint('_offerEnableBiometricIfAvailable -> cant check or already enabled');
+      debugPrint(
+          '_offerEnableBiometricIfAvailable -> cant check or already enabled');
       return;
     }
 
@@ -265,7 +261,8 @@ class _LoginScreenState extends State<LoginScreen> {
       builder: (BuildContext ctx) {
         return AlertDialog(
           title: const Text('Enable Biometric Login?'),
-          content: const Text('Do you want to enable biometric login for faster sign-in next time?'),
+          content: const Text(
+              'Do you want to enable biometric login for faster sign-in next time?'),
           actions: <Widget>[
             TextButton(
               child: const Text('No'),
@@ -320,7 +317,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _fingerPrintLogin() async {
-    final localAuthProv = Provider.of<LocalAuthenticationProvider>(context, listen: false);
+    final localAuthProv =
+        Provider.of<LocalAuthenticationProvider>(context, listen: false);
     final prefs = await SharedPreferences.getInstance();
 
     setState(() {
@@ -350,7 +348,10 @@ class _LoginScreenState extends State<LoginScreen> {
       if (result['success'] != true) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Biometric authentication failed: ${result['message']}'), backgroundColor: Colors.red),
+            SnackBar(
+                content: Text(
+                    'Biometric authentication failed: ${result['message']}'),
+                backgroundColor: Colors.red),
           );
         }
         return;
@@ -361,7 +362,8 @@ class _LoginScreenState extends State<LoginScreen> {
       String savedPassword = '';
       try {
         savedEmail = await _secureStorage.read(key: _kSavedEmailKey) ?? '';
-        savedPassword = await _secureStorage.read(key: _kSavedPasswordKey) ?? '';
+        savedPassword =
+            await _secureStorage.read(key: _kSavedPasswordKey) ?? '';
       } catch (e) {
         debugPrint('_fingerPrintLogin read secure storage error -> $e');
       }
@@ -379,7 +381,8 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       // cuba sign-in dengan credentials tersimpan
-      User? user = await _authService.signInWithEmail(savedEmail, savedPassword);
+      User? user =
+          await _authService.signInWithEmail(savedEmail, savedPassword);
       if (user != null) {
         if (user.emailVerified) {
           // set loginStatus only after successful login
@@ -428,8 +431,9 @@ class _LoginScreenState extends State<LoginScreen> {
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Email Not Verified'),
-          content: const Text('Please verify your email address before logging in. '
-              'Check your inbox for a verification email.'),
+          content:
+              const Text('Please verify your email address before logging in. '
+                  'Check your inbox for a verification email.'),
           actions: <Widget>[
             TextButton(
               child: const Text('OK'),
@@ -472,10 +476,10 @@ class _LoginScreenState extends State<LoginScreen> {
     final bool isDarkMode = theme.brightness == Brightness.dark;
 
     // Colors that adapt to theme
-    final primaryColor = isDarkMode 
-        ? const Color.fromRGBO(180, 100, 100, 1) // Darker pink for dark mode
-        : const Color.fromRGBO(224, 124, 124, 1);
-        
+    final primaryColor = isDarkMode
+        ? const Color.fromRGBO(16, 100, 100, 1) // Darker pink for dark mode
+        : const Color.fromRGBO(16, 121, 102, 1);
+
     final cardColor = theme.cardColor;
     final textColor = theme.textTheme.bodyLarge?.color;
     final hintColor = theme.hintColor;
@@ -491,10 +495,12 @@ class _LoginScreenState extends State<LoginScreen> {
             Container(
               decoration: BoxDecoration(
                 image: DecorationImage(
-                  image: const AssetImage("assets/images/background_Splash.jpg"),
+                  image:
+                      const AssetImage("assets/images/background_Splash.jpg"),
                   fit: BoxFit.cover,
-                  colorFilter: isDarkMode 
-                      ? ColorFilter.mode(Colors.black.withOpacity(0.7), BlendMode.darken)
+                  colorFilter: isDarkMode
+                      ? ColorFilter.mode(
+                          Colors.black.withOpacity(0.7), BlendMode.darken)
                       : null,
                 ),
               ),
@@ -560,7 +566,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       // Spacer to push content below top semicircle
                       SizedBox(height: size.height * 0.22),
-                      
+
                       // Login Card
                       Container(
                         padding: const EdgeInsets.all(24.0),
@@ -600,7 +606,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   if (value == null || value.isEmpty) {
                                     return 'Please enter your email';
                                   }
-                                  if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value)) {
+                                  if (!RegExp(
+                                          r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                                      .hasMatch(value)) {
                                     return 'Please enter a valid email';
                                   }
                                   return null;
@@ -609,7 +617,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   labelText: "Email",
                                   labelStyle: TextStyle(color: hintColor),
                                   border: const UnderlineInputBorder(),
-                                  prefixIcon: Icon(Icons.email, color: hintColor),
+                                  prefixIcon:
+                                      Icon(Icons.email, color: hintColor),
                                 ),
                                 keyboardType: TextInputType.emailAddress,
                               ),
@@ -633,10 +642,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   labelText: "Password",
                                   labelStyle: TextStyle(color: hintColor),
                                   border: const UnderlineInputBorder(),
-                                  prefixIcon: Icon(Icons.lock, color: hintColor),
+                                  prefixIcon:
+                                      Icon(Icons.lock, color: hintColor),
                                   suffixIcon: IconButton(
                                     icon: Icon(
-                                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                      _obscurePassword
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
                                       color: hintColor,
                                     ),
                                     onPressed: () {
@@ -657,7 +669,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => const ForgotPasswordScreen(),
+                                        builder: (context) =>
+                                            const ForgotPasswordScreen(),
                                       ),
                                     );
                                   },
@@ -673,7 +686,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
                               // Button Login + Biometric di sebelah
                               _isLoading
-                                  ? const Center(child: CircularProgressIndicator())
+                                  ? const Center(
+                                      child: CircularProgressIndicator())
                                   : Row(
                                       children: [
                                         Expanded(
@@ -682,14 +696,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                             onPressed: _login,
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor: primaryColor,
-                                              padding: const EdgeInsets.symmetric(vertical: 16),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      vertical: 16),
                                               shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(30),
+                                                borderRadius:
+                                                    BorderRadius.circular(30),
                                               ),
                                             ),
                                             child: const Text(
                                               "Login",
-                                              style: TextStyle(fontSize: 18, color: Colors.white),
+                                              style: TextStyle(
+                                                  fontSize: 18,
+                                                  color: Colors.white),
                                             ),
                                           ),
                                         ),
@@ -701,11 +720,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                                 height: 48,
                                                 child: ElevatedButton(
                                                   onPressed: _fingerPrintLogin,
-                                                  style: ElevatedButton.styleFrom(
-                                                    backgroundColor: primaryColor,
+                                                  style:
+                                                      ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        primaryColor,
                                                     padding: EdgeInsets.zero,
-                                                    shape: RoundedRectangleBorder(
-                                                      borderRadius: BorderRadius.circular(12),
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              12),
                                                     ),
                                                     elevation: 4,
                                                   ),
@@ -736,7 +760,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) => const RegisterScreen(),
+                                          builder: (context) =>
+                                              const RegisterScreen(),
                                         ),
                                       );
                                     },
@@ -754,7 +779,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                       ),
-                      
+
                       // Bottom spacer to ensure content doesn't overlap with bottom semicircle
                       SizedBox(height: size.height * 0.25),
                     ],
