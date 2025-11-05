@@ -1,3 +1,4 @@
+// document_preview_screen.dart
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -47,13 +48,15 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     super.dispose();
   }
 
-  /// Load file from cache or backend
+  /* =====================================================
+     📥 Load file with cache + backend fallback
+  ====================================================== */
   Future<void> _loadFile() async {
     final name = widget.document['name'] ?? 'file';
     final cacheDir = await getTemporaryDirectory();
     final cachedPath = '${cacheDir.path}/$name';
 
-    // ✅ Check local cache first
+    // ✅ Use cached file first
     if (await File(cachedPath).exists()) {
       final bytes = await File(cachedPath).readAsBytes();
       setState(() {
@@ -65,6 +68,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
       return;
     }
 
+    // 🌐 Otherwise, fetch from backend
     try {
       final bytes = await widget.documentService.downloadDocument(
         widget.document['_id'],
@@ -89,13 +93,40 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     }
   }
 
+  /* =====================================================
+     📚 Detect & handle PDF files
+  ====================================================== */
   void _initPdfIfNeeded(Uint8List bytes) {
-    final mime = widget.document['mime_type'] ?? '';
+    final mime = _getMimeType();
     if (mime == 'application/pdf') {
       _pdfController = PdfController(document: PdfDocument.openData(bytes));
     }
   }
 
+  /* =====================================================
+     🧠 Smart MIME Detection (backend or inferred)
+  ====================================================== */
+  String _getMimeType() {
+    final name = widget.document['name'] ?? '';
+    final mime = widget.document['mime_type'] ?? '';
+
+    if (mime.isNotEmpty) return mime;
+
+    if (name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'image/jpeg';
+    if (name.endsWith('.png')) return 'image/png';
+    if (name.endsWith('.gif')) return 'image/gif';
+    if (name.endsWith('.pdf')) return 'application/pdf';
+    if (name.endsWith('.txt')) return 'text/plain';
+    if (name.endsWith('.md')) return 'text/markdown';
+    if (name.endsWith('.dart')) return 'text/x-dart';
+    if (name.endsWith('.js')) return 'application/javascript';
+
+    return 'application/octet-stream'; // fallback
+  }
+
+  /* =====================================================
+     🔗 External open/share
+  ====================================================== */
   Future<void> _openExternally() async {
     if (_localPath == null) return;
     final result = await OpenFile.open(_localPath!);
@@ -106,20 +137,24 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
 
   Future<void> _shareFile() async {
     if (_localPath == null) return;
-    // In a real app, use the "share_plus" package
-    _showMessage('Sharing not implemented — install share_plus to enable.');
+    _showMessage('Sharing not implemented — use share_plus to enable.');
   }
 
+  /* =====================================================
+     🧾 UI Helpers
+  ====================================================== */
   void _showError(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: Colors.red),
+    );
   }
 
   void _showMessage(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: Colors.green));
+      SnackBar(content: Text(msg), backgroundColor: Colors.green),
+    );
   }
 
   String _formatFileSize(int? bytes) {
@@ -131,19 +166,26 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     return '${mb.toStringAsFixed(2)} MB';
   }
 
+  /* =====================================================
+     🖼️ Main UI
+  ====================================================== */
   @override
   Widget build(BuildContext context) {
     final doc = widget.document;
     final name = doc['name'] ?? 'Unnamed';
-    final mime = doc['mime_type'] ?? '';
-    final uploaded =
-        doc['created_at'] != null ? DateTime.tryParse(doc['created_at']) : null;
+    final mime = _getMimeType();
+    final uploaded = doc['created_at'] != null
+        ? DateTime.tryParse(doc['created_at'].toString())
+        : null;
 
     Widget body;
+
     if (_loading) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
       body = Center(child: Text('Error: $_error'));
+    } else if (_fileBytes == null) {
+      body = const Center(child: Text('No file content available'));
     } else if (mime.startsWith('image/')) {
       body = Center(child: InteractiveViewer(child: Image.memory(_fileBytes!)));
     } else if (mime == 'application/pdf') {
@@ -204,7 +246,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
       ),
       body: Column(
         children: [
-          // 📄 File metadata
           Container(
             padding: const EdgeInsets.all(12),
             color: Colors.grey.shade100,
@@ -216,15 +257,17 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                       Text('Type: $mime'),
                       if (uploaded != null)
                         Text('Uploaded: ${DateFormat.yMMMd().format(uploaded)}'),
-                      Text(
-                        'Size: ${_formatFileSize(doc['file_size'])}',
-                      ),
+                      Text('Size: ${_formatFileSize(doc['file_size'])}'),
                     ],
                   ),
                 ),

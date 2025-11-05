@@ -30,6 +30,12 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     _initializeUser();
   }
 
+  @override
+  void dispose() {
+    _documentService.clearCache();
+    super.dispose();
+  }
+
   Future<void> _initializeUser() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -92,8 +98,9 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
         _uid!,
         parentId: _currentFolderId,
       );
+      _documentService.clearCache();
       await _loadDocuments();
-      _showMessage('Folder created successfully');
+      _showMessage('📁 Folder created successfully');
     } catch (e) {
       _showError('Failed to create folder: $e');
     }
@@ -129,10 +136,11 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
         await _documentService.uploadDocument(
           file,
           _uid!,
-          parentId: _currentFolderId,
+          folderId: _currentFolderId,
         );
+        _documentService.clearCache();
         await _loadDocuments();
-        _showMessage('File uploaded successfully');
+        _showMessage('📤 File uploaded successfully');
       } catch (e) {
         _showError('Upload failed: $e');
       } finally {
@@ -163,17 +171,19 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
     if (confirm != true) return;
 
     try {
-      // ✅ Fixed call — matches DocumentService.deleteItem() parameters
-      await _documentService.deleteItem(
-        id,
-        _uid!,
-        type,
-        parentId: _currentFolderId,
-      );
+      setState(() => _loading = true);
+      await _documentService.deleteItem(id, _uid!, type, parentId: _currentFolderId);
+      
+      // 🔄 Refresh folder instantly after deletion
+      await _documentService.fetchFolderContents(_uid!, parentId: _currentFolderId);
+      _documentService.clearCache();
       await _loadDocuments();
-      _showMessage('Deleted successfully');
+
+      _showMessage('🗑️ Item deleted successfully');
     } catch (e) {
       _showError('Delete failed: $e');
+    } finally {
+      setState(() => _loading = false);
     }
   }
 
@@ -184,13 +194,12 @@ class _DocumentManagerScreenState extends State<DocumentManagerScreen> {
       final dir = await getApplicationDocumentsDirectory();
       final file = File('${dir.path}/$name');
       await file.writeAsBytes(bytes);
-      _showMessage('Downloaded to ${file.path}');
+      _showMessage('📥 Downloaded to ${file.path}');
     } catch (e) {
       _showError('Download failed: $e');
     }
   }
 
-  // Helpers
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(msg), backgroundColor: Colors.red.shade600),
       );

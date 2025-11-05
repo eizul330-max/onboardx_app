@@ -4,67 +4,121 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
+/// Internal cache entry class for folder/file caching
+class _CacheEntry {
+  final List<Map<String, dynamic>> data;
+  DateTime timestamp;
+  _CacheEntry(this.data) : timestamp = DateTime.now();
+}
+
 class DocumentService {
-  /// Backend base URL — centralized here
   static const String _baseUrl = 'http://10.111.132.36:4000/api';
 
-  /// Simple in-memory cache for folder contents
-  final Map<String, List<dynamic>> _cache = {};
+  static const int _maxCacheEntries = 8;
+  static const Duration _cacheTTL = Duration(seconds: 30);
+
+  final Map<String, _CacheEntry> _cache = {};
+  final List<String> _lruOrder = [];
+
+  bool _isExpired(String key) {
+    final entry = _cache[key];
+    if (entry == null) return true;
+    return DateTime.now().difference(entry.timestamp) > _cacheTTL;
+  }
+
+  void _touch(String key) {
+    _lruOrder.remove(key);
+    _lruOrder.insert(0, key);
+  }
+
+  void _evictIfNeeded() {
+    while (_lruOrder.length > _maxCacheEntries) {
+      final oldestKey = _lruOrder.removeLast();
+      _cache.remove(oldestKey);
+    }
+  }
+
+  void _invalidateCache(String uid, String? parentId) {
+    final cacheKey = '${uid}_${parentId ?? "root"}';
+    _cache.remove(cacheKey);
+    _lruOrder.remove(cacheKey);
+  }
+
+  void clearCache() {
+    _cache.clear();
+    _lruOrder.clear();
+  }
 
   /* =====================================================
      📁 Fetch Folder Contents
   ====================================================== */
-  Future<List<dynamic>> fetchFolderContents(String uid, {String? parentId}) async {
-    // If no parent folder ID — get user's root folder
+  Future<List<Map<String, dynamic>>> fetchFolderContents(String uid, {String? parentId}) async {
     final effectiveParentId = parentId ?? await _getRootFolderId(uid);
-
     final cacheKey = '${uid}_${effectiveParentId ?? "root"}';
-    if (_cache.containsKey(cacheKey)) {
+
+    // Use cache if valid
+    if (_cache.containsKey(cacheKey) && !_isExpired(cacheKey)) {
       print('📦 Using cached data for $cacheKey');
-      return _cache[cacheKey]!;
+      _touch(cacheKey);
+      _silentRefresh(uid, effectiveParentId, cacheKey);
+      return _cache[cacheKey]!.data;
     }
 
+    // Otherwise fetch fresh
+    final combined = await _fetchAndCombine(uid, effectiveParentId);
+    _cache[cacheKey] = _CacheEntry(combined);
+    _touch(cacheKey);
+    _evictIfNeeded();
+    return combined;
+  }
+
+  void _silentRefresh(String uid, String? parentId, String cacheKey) async {
+    try {
+      final combined = await _fetchAndCombine(uid, parentId);
+      _cache[cacheKey] = _CacheEntry(combined);
+      print('🔄 Cache silently refreshed for $cacheKey');
+    } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAndCombine(String uid, String? parentId) async {
     final queryParams = {
       'uid': uid,
-      if (effectiveParentId != null) 'parent_folder_id': effectiveParentId,
+      if (parentId != null) 'parent_folder_id': parentId,
     };
 
     final foldersUri = Uri.parse('$_baseUrl/folders').replace(queryParameters: queryParams);
     final filesUri = Uri.parse('$_baseUrl/files').replace(queryParameters: queryParams);
 
-    try {
-      final responses = await Future.wait([
-        http.get(foldersUri),
-        http.get(filesUri),
-      ]);
+    final responses = await Future.wait([
+      http.get(foldersUri),
+      http.get(filesUri),
+    ]);
 
-      final foldersResponse = responses[0];
-      final filesResponse = responses[1];
-
-      if (foldersResponse.statusCode != 200) {
-        throw Exception('Failed to fetch folders: ${foldersResponse.statusCode}');
-      }
-
-      final folders = jsonDecode(foldersResponse.body) as List;
-      final List files;
-      if (filesResponse.statusCode == 200) {
-        files = jsonDecode(filesResponse.body) as List;
-      } else if (filesResponse.statusCode == 404) {
-        files = [];
-      } else {
-        throw Exception('Failed to fetch files: ${filesResponse.statusCode}');
-      }
-
-      final combined = [
-        ...folders.map((f) => {...f, 'type': 'folder'}),
-        ...files.map((f) => {...f, 'type': 'file'}),
-      ];
-
-      _cache[cacheKey] = combined;
-      return combined;
-    } catch (e) {
-      throw Exception('Failed to fetch folder contents: $e');
+    if (responses[0].statusCode != 200) {
+      throw Exception('Failed to fetch folders: ${responses[0].statusCode}');
     }
+
+    final List folders = jsonDecode(responses[0].body);
+    final List files;
+    if (responses[1].statusCode == 200) {
+      files = jsonDecode(responses[1].body);
+    } else if (responses[1].statusCode == 404) {
+      files = [];
+    } else {
+      throw Exception('Failed to fetch files: ${responses[1].statusCode}');
+    }
+
+    List<Map<String, dynamic>> safeFolders = folders
+        .map((f) => Map<String, dynamic>.from(f))
+        .map((f) => {...f, 'type': 'folder'})
+        .toList();
+
+    List<Map<String, dynamic>> safeFiles = files
+        .map((f) => Map<String, dynamic>.from(f))
+        .map((f) => {...f, 'type': 'file'})
+        .toList();
+
+    return [...safeFolders, ...safeFiles];
   }
 
   /* =====================================================
@@ -129,7 +183,7 @@ class DocumentService {
   }
 
   /* =====================================================
-     🗑️ Delete File or Folder
+     🗑️ Delete Item
   ====================================================== */
   Future<void> deleteItem(String id, String uid, String type, {String? parentId}) async {
     if (type != 'file' && type != 'folder') {
@@ -138,7 +192,6 @@ class DocumentService {
 
     final endpoint = type == 'file' ? 'files' : 'folders';
     final uri = Uri.parse('$_baseUrl/$endpoint/$id?uid=$uid');
-
     final response = await http.delete(uri);
 
     if (response.statusCode == 200) {
@@ -149,7 +202,7 @@ class DocumentService {
   }
 
   /* =====================================================
-     🌱 Root Folder
+     🌱 Root Folder Handling
   ====================================================== */
   Future<String?> _getRootFolderId(String uid) async {
     try {
@@ -157,10 +210,9 @@ class DocumentService {
       final response = await http.get(uri);
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final data = Map<String, dynamic>.from(jsonDecode(response.body));
         return data['_id'];
       } else if (response.statusCode == 404) {
-        // Auto-create root folder
         print('🪴 No root folder found, creating new one for UID: $uid');
         return await _createRootFolder(uid);
       } else {
@@ -181,20 +233,10 @@ class DocumentService {
     );
 
     if (response.statusCode == 201) {
-      final data = jsonDecode(response.body);
+      final data = Map<String, dynamic>.from(jsonDecode(response.body));
       return data['_id'];
     } else {
       throw Exception('Failed to create root folder: ${response.statusCode}');
     }
   }
-
-  /* =====================================================
-     🧠 Cache Helpers
-  ====================================================== */
-  void _invalidateCache(String uid, String? parentId) {
-    final cacheKey = '${uid}_${parentId ?? "root"}';
-    _cache.remove(cacheKey);
-  }
-
-  void clearCache() => _cache.clear();
 }
