@@ -16,6 +16,7 @@ import 'package:onboardx_app/screens/setting/manage_your_account_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:onboardx_app/services/user_service.dart';
 import 'package:onboardx_app/services/team_service.dart';
+import 'package:onboardx_app/screens/taskmanager/task_manager_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -737,7 +738,7 @@ class _HomeContentState extends State<HomeContent> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const HomeContent(),
+              builder: (context) => const TaskManagerScreen(),
             ),
           );
         }
