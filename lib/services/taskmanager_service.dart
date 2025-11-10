@@ -43,10 +43,10 @@ class TaskManagerService {
   /* =====================================================
      📥 Fetch all files for a user
   ====================================================== */
-  Future<List<Map<String, dynamic>>> fetchUserTasks(String uid) async {
+  Future<List<Map<String, dynamic>>> fetchUserTasks(String uid, {bool forceRefresh = false}) async {
     final cacheKey = uid;
 
-    if (_cache.containsKey(cacheKey) && !_isExpired(cacheKey)) {
+    if (!forceRefresh && _cache.containsKey(cacheKey) && !_isExpired(cacheKey)) {
       _touch(cacheKey);
       _silentRefresh(uid);
       return _cache[cacheKey]!.data;

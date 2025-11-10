@@ -40,12 +40,12 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
     }
   }
 
-  Future<void> _loadTaskFiles() async {
+  Future<void> _loadTaskFiles({bool forceRefresh = false}) async {
     if (_userUid == null) return;
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final files = await _taskService.fetchUserTasks(_userUid!);
+      final files = await _taskService.fetchUserTasks(_userUid!, forceRefresh: forceRefresh);
       if (!mounted) return;
       setState(() {
         _taskFiles = files;
@@ -109,21 +109,21 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                       subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles,
                       subtitleColor: hintColor,
                       taskFile: _getFileForCategory('Lampiran A'),
-                      onFileChanged: _loadTaskFiles),
+                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
                   DocumentCard(
                       uid: _userUid!,
                       title: 'Sijil Tanggung Rugi',
                       subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles,
                       subtitleColor: hintColor,
                       taskFile: _getFileForCategory('Sijil Tanggung Rugi'),
-                      onFileChanged: _loadTaskFiles),
+                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
                   DocumentCard(
                       uid: _userUid!,
                       title: 'Penyata Bank',
                       subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles,
                       subtitleColor: hintColor,
                       taskFile: _getFileForCategory('Penyata Bank'),
-                      onFileChanged: _loadTaskFiles),
+                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
                   const SizedBox(height: 32),
                   Text(AppLocalizations.of(context)!.privateDetailsandCerts,
                       style: Theme.of(context)
@@ -137,21 +137,21 @@ class _TaskManagerScreenState extends State<TaskManagerScreen> {
                       subtitle: AppLocalizations.of(context)!.uploadRequired,
                       subtitleColor: hintColor,
                       taskFile: _getFileForCategory(AppLocalizations.of(context)!.identityCard),
-                      onFileChanged: _loadTaskFiles),
+                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
                   DocumentCard(
                       uid: _userUid!,
                       title: AppLocalizations.of(context)!.drivingLicense,
                       subtitle: AppLocalizations.of(context)!.optional,
                       subtitleColor: hintColor,
                       taskFile: _getFileForCategory(AppLocalizations.of(context)!.drivingLicense),
-                      onFileChanged: _loadTaskFiles),
+                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
                   DocumentCard(
                       uid: _userUid!,
                       title: AppLocalizations.of(context)!.certificate,
                       subtitle: AppLocalizations.of(context)!.optional,
                       subtitleColor: hintColor,
                       taskFile: _getFileForCategory(AppLocalizations.of(context)!.certificate),
-                      onFileChanged: _loadTaskFiles),
+                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
                 ],
               ),
             ),
