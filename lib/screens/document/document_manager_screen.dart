@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:onboardx_app/services/document_services.dart';
-import 'document_preview_screen.dart';
+import 'package:onboardx_app/screens/document/document_preview_screen.dart';
 
 class DocumentManagerScreen extends StatefulWidget {
   const DocumentManagerScreen({super.key});

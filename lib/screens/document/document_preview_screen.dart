@@ -10,7 +10,6 @@ import 'package:highlight/languages/dart.dart';
 import 'package:highlight/languages/javascript.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
-import 'package:intl/intl.dart';
 import 'package:onboardx_app/services/document_services.dart';
 
 class DocumentPreviewScreen extends StatefulWidget {
@@ -34,7 +33,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
   bool _loading = true;
   String? _error;
   PdfController? _pdfController;
+  int _totalPages = 0;
+  int _currentPage = 1;
   String? _localPath;
+
+  // 🆕 Added for overlay controls
+  bool _showOverlay = true;
+  int _pagesCount = 0;
 
   @override
   void initState() {
@@ -48,9 +53,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     super.dispose();
   }
 
-  /* =====================================================
-     📥 Load file with cache + backend fallback
-  ====================================================== */
   Future<void> _loadFile() async {
     final name = widget.document['name'] ?? 'file';
     final cacheDir = await getTemporaryDirectory();
@@ -64,7 +66,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
         _localPath = cachedPath;
         _loading = false;
       });
-      _initPdfIfNeeded(bytes);
+      await _initPdfIfNeeded(bytes);
       return;
     }
 
@@ -84,7 +86,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
         _loading = false;
       });
 
-      _initPdfIfNeeded(bytes);
+      await _initPdfIfNeeded(bytes);
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -93,19 +95,18 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     }
   }
 
-  /* =====================================================
-     📚 Detect & handle PDF files
-  ====================================================== */
-  void _initPdfIfNeeded(Uint8List bytes) {
+  Future<void> _initPdfIfNeeded(Uint8List bytes) async {
     final mime = _getMimeType();
     if (mime == 'application/pdf') {
-      _pdfController = PdfController(document: PdfDocument.openData(bytes));
+      final doc = await PdfDocument.openData(bytes);
+      setState(() {
+        _pdfController = PdfController(document: Future.value(doc));
+        _pagesCount = doc.pagesCount;
+        _totalPages = doc.pagesCount;
+      });
     }
   }
 
-  /* =====================================================
-     🧠 Smart MIME Detection (backend or inferred)
-  ====================================================== */
   String _getMimeType() {
     final name = widget.document['name'] ?? '';
     final mime = widget.document['mime_type'] ?? '';
@@ -121,12 +122,9 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     if (name.endsWith('.dart')) return 'text/x-dart';
     if (name.endsWith('.js')) return 'application/javascript';
 
-    return 'application/octet-stream'; // fallback
+    return 'application/octet-stream';
   }
 
-  /* =====================================================
-     🔗 External open/share
-  ====================================================== */
   Future<void> _openExternally() async {
     if (_localPath == null) return;
     final result = await OpenFile.open(_localPath!);
@@ -135,14 +133,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     }
   }
 
-  Future<void> _shareFile() async {
-    if (_localPath == null) return;
-    _showMessage('Sharing not implemented — use share_plus to enable.');
-  }
-
-  /* =====================================================
-     🧾 UI Helpers
-  ====================================================== */
   void _showError(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -150,36 +140,50 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     );
   }
 
-  void _showMessage(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Colors.green),
+  void _jumpToPage(int page) {
+    if (_pdfController == null || page < 1 || page > _totalPages) return;
+    _pdfController!.jumpToPage(page);
+    setState(() => _currentPage = page);
+  }
+
+  // 🆕 Dialog to jump to a specific page
+  Future<int?> _showGotoDialog(BuildContext context, int currentPage) async {
+    final controller = TextEditingController(text: currentPage.toString());
+    return showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Go to Page"),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Page number',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () {
+              final page = int.tryParse(controller.text);
+              Navigator.pop(ctx, page);
+            },
+            child: const Text("Go"),
+          ),
+        ],
+      ),
     );
   }
 
-  String _formatFileSize(int? bytes) {
-    if (bytes == null || bytes == 0) return '0 KB';
-    if (bytes < 1024) return '$bytes B';
-    final kb = bytes / 1024;
-    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
-    final mb = kb / 1024;
-    return '${mb.toStringAsFixed(2)} MB';
-  }
-
-  /* =====================================================
-     🖼️ Main UI
-  ====================================================== */
   @override
   Widget build(BuildContext context) {
-    final doc = widget.document;
-    final name = doc['name'] ?? 'Unnamed';
+    final name = widget.document['name'] ?? 'Unnamed';
     final mime = _getMimeType();
-    final uploaded = doc['created_at'] != null
-        ? DateTime.tryParse(doc['created_at'].toString())
-        : null;
 
     Widget body;
-
     if (_loading) {
       body = const Center(child: CircularProgressIndicator());
     } else if (_error != null) {
@@ -187,9 +191,63 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     } else if (_fileBytes == null) {
       body = const Center(child: Text('No file content available'));
     } else if (mime.startsWith('image/')) {
-      body = Center(child: InteractiveViewer(child: Image.memory(_fileBytes!)));
+      body = InteractiveViewer(child: Image.memory(_fileBytes!));
     } else if (mime == 'application/pdf') {
-      body = PdfView(controller: _pdfController!);
+      body = Stack(
+        children: [
+          PdfView(
+            controller: _pdfController!,
+            onPageChanged: (page) {
+              setState(() => _currentPage = page);
+            },
+          ),
+
+          // 🆕 Overlay controls for PDF navigation
+          if (_showOverlay)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom,
+                  top: 8,
+                  left: 12,
+                  right: 12,
+                ),
+                color: Colors.black38,
+                child: Row(
+                  children: [
+                    IconButton(
+                      color: Colors.white,
+                      icon: const Icon(Icons.chevron_left),
+                      onPressed:
+                          _currentPage > 1 ? () => _jumpToPage(_currentPage - 1) : null,
+                    ),
+                    Text('$_currentPage / $_pagesCount',
+                        style: const TextStyle(color: Colors.white)),
+                    IconButton(
+                      color: Colors.white,
+                      icon: const Icon(Icons.chevron_right),
+                      onPressed: _currentPage < _pagesCount
+                          ? () => _jumpToPage(_currentPage + 1)
+                          : null,
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      color: Colors.white,
+                      icon: const Icon(Icons.keyboard_double_arrow_up),
+                      onPressed: () async {
+                        final input = await _showGotoDialog(context, _currentPage);
+                        if (input != null) _jumpToPage(input);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      );
     } else if (mime.startsWith('text/')) {
       body = SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -198,7 +256,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     } else if (name.endsWith('.md')) {
       body = Markdown(data: String.fromCharCodes(_fileBytes!));
     } else if (name.endsWith('.dart') || name.endsWith('.js')) {
-      final lang = name.endsWith('.dart') ? dart : javascript;
       body = SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: HighlightView(
@@ -237,47 +294,9 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
             onPressed: _localPath != null ? _openExternally : null,
             tooltip: 'Open externally',
           ),
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: _shareFile,
-            tooltip: 'Share file',
-          ),
         ],
       ),
-      body: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            color: Colors.grey.shade100,
-            child: Row(
-              children: [
-                const Icon(Icons.description, color: Colors.blueAccent),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      Text('Type: $mime'),
-                      if (uploaded != null)
-                        Text('Uploaded: ${DateFormat.yMMMd().format(uploaded)}'),
-                      Text('Size: ${_formatFileSize(doc['file_size'])}'),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(child: body),
-        ],
-      ),
+      body: body,
     );
   }
 }
