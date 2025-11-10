@@ -1,4 +1,4 @@
-// lib/services/taskmanager_service.dart
+// taskmanager_service.dart
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io';
@@ -56,7 +56,8 @@ class TaskManagerService {
     final response = await http.get(uri);
 
     if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
+      final Map<String, dynamic> body = jsonDecode(response.body);
+      final List data = body['data'] as List;
       final safeData = data.map((d) => Map<String, dynamic>.from(d)).toList();
       _cache[cacheKey] = _CacheEntry(safeData);
       _touch(cacheKey);
@@ -72,7 +73,8 @@ class TaskManagerService {
       final uri = Uri.parse('$_baseUrl/$uid');
       final response = await http.get(uri);
       if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
+        final Map<String, dynamic> body = jsonDecode(response.body);
+        final List data = body['data'] as List;
         final safeData = data.map((d) => Map<String, dynamic>.from(d)).toList();
         _cache[uid] = _CacheEntry(safeData);
       }
@@ -114,7 +116,7 @@ class TaskManagerService {
   /* =====================================================
      📂 Download & open file
   ====================================================== */
-  Future<void> openTaskFile(String fileId, String uid) async {
+  Future<void> openTaskFile(String fileId, String uid, {String? fileName}) async {
     final uri = Uri.parse('$_baseUrl/$uid/files/$fileId/download');
     final response = await http.get(uri);
 
@@ -122,8 +124,15 @@ class TaskManagerService {
       throw Exception('Download failed: ${response.statusCode}');
     }
 
+    // Try to get the original filename from the Content-Disposition header
+    final disposition = response.headers['content-disposition'];
+    String finalFileName = fileName ?? fileId; // Fallback to fileId
+    if (disposition != null && disposition.contains('filename=')) {
+      finalFileName = disposition.split('filename=')[1].replaceAll('"', '').trim();
+    }
+
     final tempDir = Directory.systemTemp;
-    final filePath = path.join(tempDir.path, '$fileId');
+    final filePath = path.join(tempDir.path, finalFileName);
     final file = File(filePath);
     await file.writeAsBytes(response.bodyBytes);
 
