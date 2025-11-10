@@ -1,15 +1,10 @@
-// task_manager_services.dart
+// lib/services/taskmanager_service.dart
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:http/http.dart' as http;
-
-/// Internal cache entry (same idea as DocumentService)
-class _CacheEntry {
-  final List<Map<String, dynamic>> data;
-  DateTime timestamp;
-  _CacheEntry(this.data) : timestamp = DateTime.now();
-}
+import 'package:open_file/open_file.dart';
+import 'package:path/path.dart' as path;
 
 class TaskManagerService {
   static const String _baseUrl = 'http://10.111.132.36:4000/api/task_manager';
@@ -20,7 +15,7 @@ class TaskManagerService {
   final List<String> _lruOrder = [];
 
   /* =====================================================
-     🧠 Utility Functions (cache mgmt)
+     🧠 Cache Utility
   ====================================================== */
   bool _isExpired(String key) {
     final entry = _cache[key];
@@ -45,26 +40,18 @@ class TaskManagerService {
     _lruOrder.remove(uid);
   }
 
-  void clearCache() {
-    _cache.clear();
-    _lruOrder.clear();
-  }
-
   /* =====================================================
-     📥 Fetch Task Manager Files
+     📥 Fetch all files for a user
   ====================================================== */
   Future<List<Map<String, dynamic>>> fetchUserTasks(String uid) async {
     final cacheKey = uid;
 
-    // ✅ Use cache if fresh
     if (_cache.containsKey(cacheKey) && !_isExpired(cacheKey)) {
-      print('📦 Using cached task data for $uid');
       _touch(cacheKey);
       _silentRefresh(uid);
       return _cache[cacheKey]!.data;
     }
 
-    // 🚀 Otherwise fetch from backend
     final uri = Uri.parse('$_baseUrl/$uid');
     final response = await http.get(uri);
 
@@ -88,48 +75,30 @@ class TaskManagerService {
         final List data = jsonDecode(response.body);
         final safeData = data.map((d) => Map<String, dynamic>.from(d)).toList();
         _cache[uid] = _CacheEntry(safeData);
-        print('🔄 Task cache refreshed for $uid');
       }
     } catch (_) {}
   }
 
   /* =====================================================
-     📤 Upload Task File
+     📤 Upload file
   ====================================================== */
   Future<void> uploadTaskFile(File file, String uid, {String? category}) async {
     final uri = Uri.parse('$_baseUrl/upload');
-
     final request = http.MultipartRequest('POST', uri)
       ..fields['uid'] = uid
-      ..fields['category'] = category ?? ''; // optional grouping
+      ..fields['category'] = category ?? '';
     request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
     final response = await request.send();
-
     if (response.statusCode == 201) {
       _invalidateCache(uid);
-      print('✅ Task file uploaded successfully.');
     } else {
       throw Exception('Upload failed: ${response.statusCode}');
     }
   }
 
   /* =====================================================
-     📥 Download Task File
-  ====================================================== */
-  Future<Uint8List> downloadTaskFile(String fileId, String uid) async {
-    final uri = Uri.parse('$_baseUrl/$uid/files/$fileId/download');
-    final response = await http.get(uri);
-
-    if (response.statusCode == 200) {
-      return response.bodyBytes;
-    } else {
-      throw Exception('Download failed: ${response.statusCode}');
-    }
-  }
-
-  /* =====================================================
-     🗑️ Delete Task File
+     🗑️ Delete file
   ====================================================== */
   Future<void> deleteTaskFile(String fileId, String uid) async {
     final uri = Uri.parse('$_baseUrl/$uid/files/$fileId');
@@ -137,27 +106,36 @@ class TaskManagerService {
 
     if (response.statusCode == 200) {
       _invalidateCache(uid);
-      print('🗑️ Task file deleted successfully.');
     } else {
       throw Exception('Delete failed: ${response.statusCode}');
     }
   }
 
   /* =====================================================
-     📄 Rename / Update Task Metadata (Optional)
+     📂 Download & open file
   ====================================================== */
-  Future<void> renameTaskFile(String fileId, String uid, String newName) async {
-    final uri = Uri.parse('$_baseUrl/$uid/files/$fileId');
-    final response = await http.patch(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'new_name': newName}),
-    );
+  Future<void> openTaskFile(String fileId, String uid) async {
+    final uri = Uri.parse('$_baseUrl/$uid/files/$fileId/download');
+    final response = await http.get(uri);
 
-    if (response.statusCode == 200) {
-      _invalidateCache(uid);
-    } else {
-      throw Exception('Rename failed: ${response.statusCode}');
+    if (response.statusCode != 200) {
+      throw Exception('Download failed: ${response.statusCode}');
+    }
+
+    final tempDir = Directory.systemTemp;
+    final filePath = path.join(tempDir.path, '$fileId');
+    final file = File(filePath);
+    await file.writeAsBytes(response.bodyBytes);
+
+    final result = await OpenFile.open(file.path);
+    if (result.type != ResultType.done) {
+      throw Exception('Error opening file: ${result.message}');
     }
   }
+}
+
+class _CacheEntry {
+  final List<Map<String, dynamic>> data;
+  DateTime timestamp;
+  _CacheEntry(this.data) : timestamp = DateTime.now();
 }

@@ -1,10 +1,9 @@
-// task_manager_screen.dart
+// lib/screens/task_manager_screen.dart
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:onboardx_app/l10n/app_localizations.dart';
-import 'package:open_file/open_file.dart'; // Import the package
 import 'package:onboardx_app/services/taskmanager_service.dart';
-import 'dart:io' as io;
+import 'dart:io';
 
 class TaskManagerScreen extends StatelessWidget {
   const TaskManagerScreen({super.key});
@@ -16,115 +15,55 @@ class TaskManagerScreen extends StatelessWidget {
     final Color textColor = Theme.of(context).colorScheme.onBackground;
     final Color hintColor = isDarkMode ? Colors.grey[400]! : Colors.grey[600]!;
 
+    const String userUid = 'USER123';
+
     return Scaffold(
       backgroundColor: scaffoldBackground,
       appBar: AppBar(
-        title: Text(
-          (AppLocalizations.of(context)!.taskmanager1),
-          style: TextStyle(color: textColor),
-        ),
-        centerTitle: true,
-        elevation: 0,
+        title: Text(AppLocalizations.of(context)!.taskmanager1, style: TextStyle(color: textColor)),
         backgroundColor: Colors.transparent,
         foregroundColor: textColor,
-        automaticallyImplyLeading: false,
-        leading: Center(
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => Navigator.of(context).pop(),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: const Color(0xFF107966),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.arrow_back_ios_new,
-                color: Colors.white,
-                size: 16,
-              ),
-            ),
-          ),
+        centerTitle: true,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              (AppLocalizations.of(context)!.requiredDocuments),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            DocumentCard(
-              title: 'Lampiran A',
-              subtitle: (AppLocalizations.of(context)!.uploadtherequiredfiles),
-              subtitleColor: hintColor,
-            ),
-            const SizedBox(height: 12),
-            DocumentCard(
-              title: 'Sijil Tanggung Diri',
-              subtitle: (AppLocalizations.of(context)!.uploadtherequiredfiles),
-              subtitleColor: hintColor,
-            ),
-            const SizedBox(height: 12),
-            DocumentCard(
-              title: 'Penyata Bank',
-              subtitle: (AppLocalizations.of(context)!.uploadtherequiredfiles),
-              subtitleColor: hintColor,
-            ),
-            const SizedBox(height: 32),
-            // Private Details and Certs Section
-            Text(
-              (AppLocalizations.of(context)!.privateDetailsandCerts),
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: textColor,
-                  ),
-            ),
-            const SizedBox(height: 16),
-            DocumentCard(
-              title: (AppLocalizations.of(context)!.identityCard),
-              subtitle: (AppLocalizations.of(context)!.uploadRequired),
-              subtitleColor: hintColor,
-            ),
-            const SizedBox(height: 12),
-            DocumentCard(
-              title: (AppLocalizations.of(context)!.drivingLicense),
-              subtitle: (AppLocalizations.of(context)!.optional),
-              subtitleColor: hintColor,
-            ),
-            const SizedBox(height: 12),
-            DocumentCard(
-              title: (AppLocalizations.of(context)!.certificate),
-              subtitle: (AppLocalizations.of(context)!.optional),
-              subtitleColor: hintColor,
-            ),
-          ],
-        ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(AppLocalizations.of(context)!.requiredDocuments,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: textColor)),
+          const SizedBox(height: 16),
+          DocumentCard(uid: userUid, title: 'Lampiran A', subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles, subtitleColor: hintColor),
+          DocumentCard(uid: userUid, title: 'Sijil Tanggung Rugi', subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles, subtitleColor: hintColor),
+          DocumentCard(uid: userUid, title: 'Penyata Bank', subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles, subtitleColor: hintColor),
+          const SizedBox(height: 32),
+          Text(AppLocalizations.of(context)!.privateDetailsandCerts,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold, color: textColor)),
+          const SizedBox(height: 16),
+          DocumentCard(uid: userUid, title: AppLocalizations.of(context)!.identityCard, subtitle: AppLocalizations.of(context)!.uploadRequired, subtitleColor: hintColor),
+          DocumentCard(uid: userUid, title: AppLocalizations.of(context)!.drivingLicense, subtitle: AppLocalizations.of(context)!.optional, subtitleColor: hintColor),
+          DocumentCard(uid: userUid, title: AppLocalizations.of(context)!.certificate, subtitle: AppLocalizations.of(context)!.optional, subtitleColor: hintColor),
+        ],
       ),
     );
   }
 }
 
 class DocumentCard extends StatefulWidget {
+  final String uid;
   final String title;
   final String subtitle;
   final Color? subtitleColor;
-  final String? initialFile;
 
   const DocumentCard({
     super.key,
+    required this.uid,
     required this.title,
     required this.subtitle,
     this.subtitleColor,
-    this.initialFile,
   });
 
   @override
@@ -132,247 +71,106 @@ class DocumentCard extends StatefulWidget {
 }
 
 class _DocumentCardState extends State<DocumentCard> {
+  final TaskManagerService _taskService = TaskManagerService();
   String? _selectedFileName;
-  String? _selectedFilePath; // New state variable to store the file path
   bool _isUploading = false;
 
-  @override
-  void initState() {
-    super.initState();
-    // Initialize file name and path if an initial file is provided
-    if (widget.initialFile != null) {
-      // Note: This assumes the initialFile path is valid and accessible.
-      // In a real app, you would fetch this path from a database or a file system.
-      _selectedFileName = widget.initialFile;
-      _selectedFilePath = widget.initialFile;
-    }
-  }
-
   Future<void> _pickFile() async {
-    setState(() {
-      _isUploading = true;
-    });
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null) return;
+
+    final file = File(result.files.single.path!);
+    setState(() => _isUploading = true);
 
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles();
-      if (result != null) {
-        PlatformFile file = result.files.first;
-        setState(() {
-          _selectedFileName = file.name;
-          _selectedFilePath = file.path; // Store the absolute path
-        });
-        // Simulate upload delay
-        await Future.delayed(const Duration(seconds: 2));
-        _showSnackbar('File "${file.name}" selected successfully!');
-      } else {
-        _showSnackbar('File selection canceled.');
-      }
+      await _taskService.uploadTaskFile(file, widget.uid, category: widget.title);
+      setState(() => _selectedFileName = file.path.split('/').last);
+      _showSnackbar('✅ File uploaded successfully.');
     } catch (e) {
-      _showSnackbar('Error picking file: $e');
+      _showSnackbar('❌ Upload failed: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isUploading = false;
-        });
-      }
+      setState(() => _isUploading = false);
     }
   }
 
   Future<void> _openFile() async {
-    // Now we check for the file path, which is the correct way
-    if (_selectedFilePath != null) {
-      final result = await OpenFile.open(_selectedFilePath!);
-      if (result.type != ResultType.done) {
-        _showSnackbar('Error opening file: ${result.message}');
-      } else {
-        _showSnackbar('File "$_selectedFileName" opened successfully.');
-      }
-    } else {
-      _showSnackbar('No file selected to open.');
+    if (_selectedFileName == null) {
+      _showSnackbar('No file selected.');
+      return;
+    }
+    try {
+      await _taskService.openTaskFile(_selectedFileName!, widget.uid);
+    } catch (e) {
+      _showSnackbar('❌ $e');
     }
   }
 
-  void _removeFile() {
-    setState(() {
-      _selectedFileName = null;
-      _selectedFilePath = null; // Also clear the path
-      _showSnackbar('File removed successfully!');
-    });
+  Future<void> _removeFile() async {
+    if (_selectedFileName == null) return;
+
+    try {
+      await _taskService.deleteTaskFile(_selectedFileName!, widget.uid);
+      setState(() => _selectedFileName = null);
+      _showSnackbar('🗑️ File deleted successfully.');
+    } catch (e) {
+      _showSnackbar('❌ Delete failed: $e');
+    }
   }
 
-  void _showSnackbar(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
-    }
+  void _showSnackbar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final Color cardColor = Theme.of(context).cardColor;
-    final Color textColor = Theme.of(context).colorScheme.onBackground;
-    final Color hintColor = isDarkMode ? Colors.grey[400]! : Colors.grey[600]!;
-    final Color borderColor = isDarkMode ? Colors.grey[700]! : Colors.grey[300]!;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final hintColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
+    final borderColor = isDark ? Colors.grey[700]! : Colors.grey[300]!;
 
-    final bool hasFile = _selectedFilePath != null; // Use the path to check for a file
-
-    IconData cardIcon;
-    Color cardIconColor;
-    String currentSubtitle;
-    Color currentSubtitleColor;
-
-    if (_isUploading) {
-      cardIcon = Icons.upload_file;
-      cardIconColor = Colors.blue;
-      currentSubtitle = 'Uploading...';
-      currentSubtitleColor = Colors.blue[600]!;
-    } else if (hasFile) {
-      cardIcon = Icons.check_circle;
-      cardIconColor = Colors.green;
-      currentSubtitle = _selectedFileName!;
-      currentSubtitleColor = Colors.green;
-    } else {
-      cardIcon = Icons.add_circle;
-      cardIconColor = hintColor;
-      currentSubtitle = widget.subtitle;
-      currentSubtitleColor = widget.subtitleColor ?? hintColor;
-    }
+    final hasFile = _selectedFileName != null;
+    final icon = _isUploading
+        ? Icons.upload_file
+        : hasFile
+            ? Icons.check_circle
+            : Icons.add_circle;
+    final iconColor = _isUploading
+        ? Colors.blue
+        : hasFile
+            ? Colors.green
+            : hintColor;
 
     return Card(
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      elevation: isDarkMode ? 0 : 1,
-      color: cardColor,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: isDark ? 0 : 1,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: cardIconColor.withOpacity(0.1),
-              ),
-              child: _isUploading
-                  ? SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(cardIconColor),
-                        strokeWidth: 3,
-                      ),
-                    )
-                  : Icon(
-                      cardIcon,
-                      color: cardIconColor,
-                      size: 24,
-                    ),
-            ),
+            Icon(icon, color: iconColor, size: 30),
             const SizedBox(width: 16),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: textColor,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    currentSubtitle,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: currentSubtitleColor,
-                      fontStyle: hasFile ? FontStyle.italic : null,
-                    ),
-                  ),
-                ],
+              child: Text(
+                _selectedFileName ?? widget.title,
+                style: TextStyle(fontSize: 16, color: iconColor),
               ),
             ),
-            // Actions (Upload/View/Edit/Remove)
             if (_isUploading)
-              Text((AppLocalizations.of(context)!.uploading), style: TextStyle(color: Colors.blue[600]))
+              const CircularProgressIndicator(strokeWidth: 2)
             else if (hasFile)
               Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    height: 30,
-                    child: OutlinedButton(
-                      onPressed: _openFile,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: hintColor,
-                        side: BorderSide(color: borderColor),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: Text((AppLocalizations.of(context)!.view), style: TextStyle(fontSize: 13, color: hintColor)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  PopupMenuButton<String>(
-                    onSelected: (String result) {
-                      if (result == 'edit') {
-                        _pickFile();
-                      } else if (result == 'remove') {
-                        _removeFile();
-                      }
-                    },
-                    itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                      PopupMenuItem<String>(
-                        value: 'edit',
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit, size: 20, color: textColor),
-                            const SizedBox(width: 8),
-                            Text('Edit', style: TextStyle(color: textColor)),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem<String>(
-                        value: 'remove',
-                        child: Row(
-                          children: [
-                            Icon(Icons.delete, size: 20, color: Color(0xFF107966)),
-                            const SizedBox(width: 8),
-                            Text((AppLocalizations.of(context)!.remove), style: TextStyle(color: textColor)),
-                          ],
-                        ),
-                      ),
-                    ],
-                    icon: Icon(Icons.more_vert, color: hintColor),
-                    padding: EdgeInsets.zero,
-                  )
+                  IconButton(onPressed: _openFile, icon: const Icon(Icons.visibility)),
+                  IconButton(onPressed: _removeFile, icon: const Icon(Icons.delete, color: Colors.red)),
                 ],
               )
             else
-              SizedBox(
-                height: 30,
-                child: OutlinedButton(
-                  onPressed: _pickFile,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: hintColor,
-                    side: BorderSide(color: borderColor),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  child: Text((AppLocalizations.of(context)!.upload), style: TextStyle(fontSize: 13, color: hintColor)),
+              OutlinedButton(
+                onPressed: _pickFile,
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: borderColor),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
+                child: const Text('Upload'),
               ),
           ],
         ),
