@@ -1,4 +1,4 @@
-// task_manager_screen.dart
+// lib/screens/task_manager_screen.dart
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:onboardx_app/l10n/app_localizations.dart';
@@ -15,280 +15,445 @@ class TaskManagerScreen extends StatefulWidget {
 
 class _TaskManagerScreenState extends State<TaskManagerScreen> {
   final TaskManagerService _taskService = TaskManagerService();
+
   List<Map<String, dynamic>> _taskFiles = [];
+  List<Map<String, dynamic>> _sections = [];
   bool _isLoading = true;
   String? _userUid;
 
   @override
-
   void initState() {
     super.initState();
-    _initializeUserAndLoadFiles();
+    _initializeUserAndLoadAll();
   }
 
-  Future<void> _initializeUserAndLoadFiles() async {
+  Future<void> _initializeUserAndLoadAll() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      if (!mounted) return;
       setState(() => _userUid = user.uid);
-      await _loadTaskFiles();
+      await _loadAll();
     } else {
-      if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('User not authenticated.')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('User not authenticated.')));
     }
   }
 
-  Future<void> _loadTaskFiles({bool forceRefresh = false}) async {
+  Future<void> _loadAll({bool forceRefresh = false}) async {
     if (_userUid == null) return;
-    if (!mounted) return;
     setState(() => _isLoading = true);
+
     try {
-      final files = await _taskService.fetchUserTasks(_userUid!, forceRefresh: forceRefresh);
+      final filesFuture = _taskService.fetchUserTasks(_userUid!, forceRefresh: forceRefresh);
+      final sectionsFuture = _taskService.fetchSections(_userUid!);
+
+      final results = await Future.wait([filesFuture, sectionsFuture]);
+
       if (!mounted) return;
+
       setState(() {
-        _taskFiles = files;
+        _taskFiles = results[0] as List<Map<String, dynamic>>;
+        _sections = results[1] as List<Map<String, dynamic>>;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load tasks: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to load: $e')));
     }
   }
 
-  Map<String, dynamic>? _getFileForCategory(String category) {
+  Map<String, dynamic>? _getFileForDoc(String sectionId, String docId) {
     try {
-      return _taskFiles.firstWhere((file) => file['category'] == category);
-    } catch (e) {
+      return _taskFiles.firstWhere((f) {
+        return f['section_id']?.toString() == sectionId &&
+            f['document_id']?.toString() == docId;
+      });
+    } catch (_) {
       return null;
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final bool isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final Color scaffoldBackground = Theme.of(context).scaffoldBackgroundColor;
-    final Color textColor = Theme.of(context).colorScheme.onBackground;
-    final Color hintColor = isDarkMode ? Colors.grey[400]! : Colors.grey[600]!;
+  Future<void> _showAddSectionDialog() async {
+    final TextEditingController c = TextEditingController();
 
-    return Scaffold(
-      backgroundColor: scaffoldBackground,
-      appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.taskmanager1, style: TextStyle(color: textColor)),
-        backgroundColor: Colors.transparent,
-        foregroundColor: textColor,
-        centerTitle: true,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new, color: textColor),
-          onPressed: () => Navigator.pop(context),
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Section'),
+        content: TextField(
+          controller: c,
+          decoration: const InputDecoration(labelText: 'Section name'),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+        ],
       ),
-      body: _userUid == null
-          ? const Center(child: Text('User not signed in.'))
-          : _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadTaskFiles,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  Text(AppLocalizations.of(context)!.requiredDocuments,
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold, color: textColor)),
-                  const SizedBox(height: 16),
-                  DocumentCard(
-                      uid: _userUid!,
-                      title: 'Lampiran A',
-                      subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles,
-                      subtitleColor: hintColor,
-                      taskFile: _getFileForCategory('Lampiran A'),
-                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
-                  DocumentCard(
-                      uid: _userUid!,
-                      title: 'Sijil Tanggung Rugi',
-                      subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles,
-                      subtitleColor: hintColor,
-                      taskFile: _getFileForCategory('Sijil Tanggung Rugi'),
-                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
-                  DocumentCard(
-                      uid: _userUid!,
-                      title: 'Penyata Bank',
-                      subtitle: AppLocalizations.of(context)!.uploadtherequiredfiles,
-                      subtitleColor: hintColor,
-                      taskFile: _getFileForCategory('Penyata Bank'),
-                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
-                  const SizedBox(height: 32),
-                  Text(AppLocalizations.of(context)!.privateDetailsandCerts,
-                      style: Theme.of(context)
-                          .textTheme
-                          .headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold, color: textColor)),
-                  const SizedBox(height: 16),
-                  DocumentCard(
-                      uid: _userUid!,
-                      title: AppLocalizations.of(context)!.identityCard,
-                      subtitle: AppLocalizations.of(context)!.uploadRequired,
-                      subtitleColor: hintColor,
-                      taskFile: _getFileForCategory(AppLocalizations.of(context)!.identityCard),
-                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
-                  DocumentCard(
-                      uid: _userUid!,
-                      title: AppLocalizations.of(context)!.drivingLicense,
-                      subtitle: AppLocalizations.of(context)!.optional,
-                      subtitleColor: hintColor,
-                      taskFile: _getFileForCategory(AppLocalizations.of(context)!.drivingLicense),
-                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
-                  DocumentCard(
-                      uid: _userUid!,
-                      title: AppLocalizations.of(context)!.certificate,
-                      subtitle: AppLocalizations.of(context)!.optional,
-                      subtitleColor: hintColor,
-                      taskFile: _getFileForCategory(AppLocalizations.of(context)!.certificate),
-                      onFileChanged: () => _loadTaskFiles(forceRefresh: true)),
-                ],
-              ),
-            ),
     );
+
+    if (res == true) {
+      final name = c.text.trim();
+      if (name.isEmpty) {
+        _showSnackbar('Name required');
+        return;
+      }
+      try {
+        final newSection = await _taskService.createSection(_userUid!, name);
+        setState(() => _sections.insert(0, newSection));
+        _showSnackbar('Section created');
+      } catch (e) {
+        _showSnackbar('Create failed: $e');
+      }
+    }
   }
-}
 
-class DocumentCard extends StatefulWidget {
-  final String uid;
-  final String title;
-  final String subtitle;
-  final Color? subtitleColor;
-  final Map<String, dynamic>? taskFile;
-  final VoidCallback onFileChanged;
+  Future<void> _showAddDocumentDialog(String sectionId) async {
+    final TextEditingController c = TextEditingController();
 
-  const DocumentCard({
-    super.key,
-    required this.uid,
-    required this.title,
-    required this.subtitle,
-    required this.onFileChanged,
-    this.subtitleColor,
-    this.taskFile,
-  });
+    final res = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Document Type'),
+        content: TextField(
+          controller: c,
+          decoration: const InputDecoration(labelText: 'Document name'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Add')),
+        ],
+      ),
+    );
 
-  @override
-  State<DocumentCard> createState() => _DocumentCardState();
-}
+    if (res == true) {
+      final name = c.text.trim();
+      if (name.isEmpty) {
+        _showSnackbar('Name required');
+        return;
+      }
+      try {
+        final added = await _taskService.addDocumentToSection(sectionId, name);
 
-class _DocumentCardState extends State<DocumentCard> {
-  final TaskManagerService _taskService = TaskManagerService();
-  bool _isUploading = false;
+        final idx = _sections.indexWhere((s) => s['_id'] == sectionId);
+        if (idx != -1) {
+          setState(() {
+            (_sections[idx]['documents'] as List).add(added);
+          });
+        } else {
+          await _loadAll(forceRefresh: true);
+        }
 
-  Future<void> _pickFile() async {
+        _showSnackbar('Document type added');
+      } catch (e) {
+        _showSnackbar('Add failed: $e');
+      }
+    }
+  }
+
+  Future<void> _uploadFileForDoc(String sectionId, String docId, String docName) async {
     final result = await FilePicker.platform.pickFiles();
     if (result == null) return;
 
     final file = File(result.files.single.path!);
-    setState(() => _isUploading = true);
 
     try {
-      await _taskService.uploadTaskFile(file, widget.uid, category: widget.title);
-      widget.onFileChanged();
-      _showSnackbar('✅ File uploaded successfully.');
+      await _taskService.uploadTaskFile(
+        file,
+        _userUid!,
+        category: docName,
+        sectionId: sectionId,
+        documentId: docId,
+      );
+
+      _showSnackbar('File uploaded');
+      await _loadAll(forceRefresh: true);
     } catch (e) {
-      _showSnackbar('❌ Upload failed: $e');
-    } finally {
-      setState(() => _isUploading = false);
+      _showSnackbar('Upload failed: $e');
     }
   }
 
-  Future<void> _openFile() async {
-    final fileId = widget.taskFile?['_id'];
-    if (fileId == null) {
-      _showSnackbar('No file selected.');
-      return;
-    }
+  Future<void> _downloadOpenFile(Map<String, dynamic> fileDoc) async {
     try {
-      await _taskService.openTaskFile(fileId, widget.uid);
+      await _taskService.openTaskFile(fileDoc['_id'], _userUid!);
     } catch (e) {
-      _showSnackbar('❌ $e');
+      _showSnackbar('Open failed: $e');
     }
   }
 
-  Future<void> _removeFile() async {
-    final fileId = widget.taskFile?['_id'];
-    if (fileId == null) return;
+  Future<void> _deleteFile(Map<String, dynamic> fileDoc) async {
+    try {
+      await _taskService.deleteTaskFile(fileDoc['_id'], _userUid!);
+      _showSnackbar('File deleted');
+      await _loadAll(forceRefresh: true);
+    } catch (e) {
+      _showSnackbar('Delete failed: $e');
+    }
+  }
+
+  // keep section delete as-is (uses section map for friendly dialog)
+  Future<void> _deleteSection(Map<String, dynamic> section) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete section "${section['name']}"?'),
+        content: const Text('This will fail if files are attached. Delete files first.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
 
     try {
-      await _taskService.deleteTaskFile(fileId, widget.uid);
-      widget.onFileChanged();
-      _showSnackbar('🗑️ File deleted successfully.');
+      final String sectionId = section['_id'];
+
+      await _taskService.deleteSection(sectionId);
+
+      setState(() {
+        _sections.removeWhere((s) => s['_id'] == sectionId);
+      });
+
+      _showSnackbar('Section removed');
     } catch (e) {
-      _showSnackbar('❌ Delete failed: $e');
+      _showSnackbar('Delete failed: $e');
+    }
+  }
+
+  // UPDATED: accept explicit docId and optional docName for the confirmation
+  Future<void> _deleteDocumentFromSection(String sectionId, String docId, [String? docName]) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete document "${docName ?? docId}"?'),
+        content: const Text('This will fail if files are attached. Delete files first.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete')),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      await _taskService.deleteDocumentFromSection(sectionId, docId);
+
+      final sIdx = _sections.indexWhere((s) => s['_id'] == sectionId);
+      if (sIdx != -1) {
+        setState(() {
+          (_sections[sIdx]['documents'] as List).removeWhere((d) => d['_id'] == docId);
+        });
+      } else {
+        await _loadAll(forceRefresh: true);
+      }
+
+      _showSnackbar('Document removed');
+    } catch (e) {
+      _showSnackbar('Delete failed: $e');
     }
   }
 
   void _showSnackbar(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final hintColor = isDark ? Colors.grey[400]! : Colors.grey[600]!;
-    final borderColor = isDark ? Colors.grey[700]! : Colors.grey[300]!;
+    final Color textColor = Theme.of(context).colorScheme.onBackground;
 
-    final hasFile = widget.taskFile != null;
-    final fileName = widget.taskFile?['name'] as String?;
-    final icon = _isUploading
-        ? Icons.upload_file
-        : hasFile
-            ? Icons.check_circle
-            : Icons.add_circle;
-    final iconColor = _isUploading
-        ? Colors.blue
-        : hasFile
-            ? Colors.green
-            : hintColor;
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: isDark ? 0 : 1,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Icon(icon, color: iconColor, size: 30),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                fileName ?? widget.title,
-                style: TextStyle(fontSize: 16, color: iconColor),
-              ),
-            ),
-            if (_isUploading)
-              const CircularProgressIndicator(strokeWidth: 2)
-            else if (hasFile)
-              Row(
-                children: [
-                  IconButton(onPressed: _openFile, icon: const Icon(Icons.visibility)),
-                  IconButton(onPressed: _removeFile, icon: const Icon(Icons.delete, color: Colors.red)),
-                ],
-              )
-            else
-              OutlinedButton(
-                onPressed: _pickFile,
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: borderColor),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                ),
-                child: const Text('Upload'),
-              ),
-          ],
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(AppLocalizations.of(context)!.taskmanager1,
+            style: TextStyle(color: textColor)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          // Add Section moved to the app bar
+          IconButton(
+            tooltip: 'Add Section',
+            icon: const Icon(Icons.add),
+            onPressed: _showAddSectionDialog,
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _loadAll(forceRefresh: true),
+          ),
+        ],
       ),
+      body: _userUid == null
+          ? const Center(child: Text('User not signed in.'))
+          : _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : RefreshIndicator(
+                  onRefresh: () => _loadAll(forceRefresh: true),
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      // Header text only; Add button moved to appbar
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Sections', style: Theme.of(context).textTheme.headlineSmall),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      for (final section in _sections)
+                        Card(
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        section['name'] ?? '',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Add document type',
+                                      icon: const Icon(Icons.add_circle_outline),
+                                      onPressed: () => _showAddDocumentDialog(section['_id']),
+                                    ),
+                                    IconButton(
+                                      tooltip: 'Delete section',
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                      onPressed: () => _deleteSection(section),
+                                    ),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 8),
+
+                                if ((section['documents'] as List).isEmpty)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 8),
+                                    child: Text('No document types. Add one.'),
+                                  )
+                                else
+                                  Column(
+                                    children: [
+                                      for (final doc in (section['documents'] as List))
+                                        ListTile(
+                                          contentPadding: EdgeInsets.zero,
+                                          title: Text(doc['name'] ?? ''),
+                                          subtitle: Builder(builder: (ctx) {
+                                            final f = _getFileForDoc(
+                                                section['_id'].toString(), doc['_id'].toString());
+                                            return f != null
+                                                ? Text('Uploaded: ${f['name']}')
+                                                : const Text('No file uploaded');
+                                          }),
+                                          trailing: PopupMenuButton<String>(
+                                            icon: const Icon(Icons.more_vert),
+                                            onSelected: (value) async {
+                                              final f = _getFileForDoc(
+                                                section['_id'].toString(),
+                                                doc['_id'].toString(),
+                                              );
+
+                                              if (value == 'upload') {
+                                                _uploadFileForDoc(
+                                                  section['_id'].toString(),
+                                                  doc['_id'].toString(),
+                                                  doc['name'],
+                                                );
+                                              } else if (value == 'open' && f != null) {
+                                                _downloadOpenFile(f);
+                                              } else if (value == 'delete_file' && f != null) {
+                                                _deleteFile(f);
+                                              } else if (value == 'delete_doc' && f == null) {
+                                                // IMPORTANT: pass the docId (string) + optional name
+                                                _deleteDocumentFromSection(
+                                                  section['_id'].toString(),
+                                                  doc['_id'].toString(),
+                                                  doc['name']?.toString(),
+                                                );
+                                              }
+                                            },
+                                            itemBuilder: (context) {
+                                              final f = _getFileForDoc(
+                                                section['_id'].toString(),
+                                                doc['_id'].toString(),
+                                              );
+
+                                              return <PopupMenuEntry<String>>[
+                                                const PopupMenuItem(
+                                                  value: 'upload',
+                                                  child: Row(
+                                                    children: [
+                                                      Icon(Icons.file_upload_outlined),
+                                                      SizedBox(width: 10),
+                                                      Text('Upload File'),
+                                                    ],
+                                                  ),
+                                                ),
+                                                if (f != null)
+                                                  const PopupMenuItem(
+                                                    value: 'open',
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(Icons.visibility),
+                                                        SizedBox(width: 10),
+                                                        Text('Open File'),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                if (f != null)
+                                                  const PopupMenuItem(
+                                                    value: 'delete_file',
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(Icons.delete, color: Colors.redAccent),
+                                                        SizedBox(width: 10),
+                                                        Text(
+                                                          'Delete File',
+                                                          style: TextStyle(color: Colors.redAccent),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                if (f == null)
+                                                  const PopupMenuItem(
+                                                    value: 'delete_doc',
+                                                    child: Row(
+                                                      children: [
+                                                        Icon(Icons.delete_outline, color: Colors.redAccent),
+                                                        SizedBox(width: 10),
+                                                        Text(
+                                                          'Delete Document Type',
+                                                          style: TextStyle(color: Colors.redAccent),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                              ];
+                                            },
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                      const SizedBox(height: 80),
+                    ],
+                  ),
+                ),
     );
   }
 }
